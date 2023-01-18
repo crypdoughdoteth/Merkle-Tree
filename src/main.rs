@@ -141,7 +141,7 @@ struct Tree{
         //counter for intermediate hashes variable
         let mut int_hashes: usize = 1;
         //for keeping track of depth
-        let i: usize = 2;
+        let mut i: usize = 2;
         while i < self.depth.try_into().unwrap() {
 
            let node = &self.nodes[ptr];
@@ -172,6 +172,7 @@ struct Tree{
                 };
             if found == true { return found; }
             int_hashes += 1;
+            i += 1; 
         };
         found
      }
