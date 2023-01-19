@@ -145,14 +145,15 @@ struct Tree{
         while i < self.depth.try_into().unwrap() {
 
            let node = &self.nodes[ptr];
-           
-            match &*node.left_child {
+           let ptr_old = ptr;
+           let mut ptr_new = 0; 
+           match &*node.left_child {
                 Some(x) => {
                     if x.hash == leaf{
                         found = true;
                     }
                     if x.hash == intermediate_hashes[int_hashes]{
-                        ptr = x.index;
+                        ptr_new = x.index;
                     }
                 },
                 None => ()
@@ -164,13 +165,18 @@ struct Tree{
                         found = true;
                     }
                     if x.hash == intermediate_hashes[int_hashes]{
-                        ptr = x.index;
+                        ptr_new = x.index;
                     }
                 },
                 None => ()
 
                 };
             if found == true { return found; }
+            if ptr_old == ptr_new{
+                ptr -=1;
+                //send back to the top of the loop without incrementing variables
+                continue;
+            }
             int_hashes += 1;
             i += 1; 
         };
