@@ -34,7 +34,7 @@ struct Tree{
         }
          
         let mut n = children_nodes.len();
-        
+        self.depth = 1; 
         //main loop, make sure there is at least two elemnts left, otherwise we've hit the root
         while n > 1{
             let mut o: usize = 0;
@@ -45,7 +45,6 @@ struct Tree{
                 let array = [&children_nodes[i].hash, &children_nodes[i + 1].hash];
                 //hash nodes together
                 let new_node_hash = Node::hashNodes(array);
-                o += 1; 
                 parent_nodes.push(
                     Node{ 
                         left_child: Box::new(Some(children_nodes[i].clone())),
@@ -63,6 +62,7 @@ struct Tree{
                         index: o,
                     }
                 );
+                o += 1; 
                 //increment loop by 2
                 i += 2;
             }
