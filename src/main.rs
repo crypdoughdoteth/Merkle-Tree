@@ -125,14 +125,7 @@ struct Tree{
         
         let mut parent = leaf.parent;
         let mut proof_hashes:  Vec<[u8;32]> = vec![];
-        
-
-        // start with the leaf
-        let leaf_hash = leaf.hash;
-        
-        
         let mut current_parent_node = parent.clone(); 
-        let mut current_child_node:Node;
         let mut current_hash: [u8;32] = leaf.hash.clone();
         
         loop{
