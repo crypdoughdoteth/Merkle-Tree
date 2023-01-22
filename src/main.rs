@@ -123,9 +123,8 @@ struct Tree{
         // start with leaf node => use pointer to parent node. Parent node has two children, one of which is the other hash that made it. Push hash to proof vec =>
         // Once the first hash is located, we then may query the parent of the first non-leaf node => search children for matching hash =>  push has to proof vec => repeat until root
         
-        let mut parent = leaf.parent;
         let mut proof_hashes:  Vec<[u8;32]> = vec![];
-        let mut current_parent_node = parent.clone(); 
+        let mut current_parent_node = leaf.parent; 
         let mut current_hash: [u8;32] = leaf.hash.clone();
         
         loop{
