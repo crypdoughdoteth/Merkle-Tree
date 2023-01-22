@@ -129,16 +129,7 @@ struct Tree{
         let mut current_hash: [u8;32] = leaf.hash.clone();
         
         loop{
-            //break condition, found root (parent for current node returns as None)
-            match *current_parent_node.clone(){
-                Some(x) => {
-                    match *x.parent{
-                        None => return proof_hashes,
-                        _ => (),
-                    }
-                },
-                None => (),
-            }
+
             
             match *current_parent_node.clone(){
                 Some(parent_node) => {
@@ -158,7 +149,7 @@ struct Tree{
                                     Some(x) => {
                                         current_hash = x.hash;
                                     },
-                                    None => (),
+                                    None => return proof_hashes,
                                 }
                             }
                         },
@@ -175,7 +166,7 @@ struct Tree{
                                     Some(x) => {
                                         current_hash = x.hash;
                                     },
-                                    None => (),
+                                    None => return proof_hashes,
                                 }
                             }
                         },
