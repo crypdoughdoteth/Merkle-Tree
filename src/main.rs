@@ -186,9 +186,32 @@ struct Tree{
         }  
     }
     
+    fn verify_proof(self, leaf: Leaf, hashes: Vec<[u8;32]>) -> bool{
+
+        let root = self.root.hash;
+        let child_node = Leaf::hashLeaf(leaf.data.as_bytes());
+        let mut input = [&child_node, &hashes[0]];
+        let mut current_hash:[u8;32] = Node::hashNodes(input);
+        let mut counter: usize = 1;
+        loop{
+            input = [&current_hash, &hashes[counter]];
+            current_hash = Node::hashNodes(input);
+            counter += 1; 
+
+            if counter == hashes.len() - 1{
+                break;
+            }
+        }
+        if root == current_hash{
+            true
+        }
+        else{
+            false
+        }
+    }
     
     //okay, I gotta refactor this to be cleaner. I don't need this extra loop sequence
-    fn search_tree(self, intermediate_hashes: Vec<[u8;32]>, leaf: [u8;32]) -> bool{
+fn search_tree(self, intermediate_hashes: Vec<[u8;32]>, leaf: [u8;32]) -> bool{
         //stategy: root => match ((left child || right child), intermediate_hash[i])  => node @ matched index ... => ... =>    
         
         let mut found: bool = false;
