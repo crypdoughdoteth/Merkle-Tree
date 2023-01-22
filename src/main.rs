@@ -23,7 +23,7 @@ struct Tree{
         //append new Node to children_nodes  
         let mut parent_nodes: Vec<Node> = Vec::new();
         let mut children_nodes: Vec<Node> = leafs.iter().map(|x|{
-           let x_hashed = Leaf::hashLeaf(x.data.as_bytes());
+           let x_hashed = Leaf::hash_leaf(x.data.as_bytes());
            println!("child hash: {:?}", &x_hashed);
             Node::new(Box::new(None), Box::new(None),Box::new(None), x_hashed)
         }).collect();
@@ -44,10 +44,10 @@ struct Tree{
             let mut i = 0;
             //iterates over children_nodes to create new parent nodes
             while i < n - 1 {
-                //create input for Node::hashNodes()
+                //create input for Node::hash_nodes()
                 let array = [&children_nodes[i].hash, &children_nodes[i + 1].hash];
                 //hash nodes together
-                let new_node_hash = Node::hashNodes(array);
+                let new_node_hash = Node::hash_nodes(array);
                 println!("node hash: {:?}", &new_node_hash);
                 let new_node =                    
                     Node{ 
@@ -189,13 +189,13 @@ struct Tree{
     fn verify_proof(self, leaf: Leaf, hashes: Vec<[u8;32]>) -> bool{
 
         let root = self.root.hash;
-        let child_node = Leaf::hashLeaf(leaf.data.as_bytes());
+        let child_node = Leaf::hash_leaf(leaf.data.as_bytes());
         let mut input = [&child_node, &hashes[0]];
-        let mut current_hash:[u8;32] = Node::hashNodes(input);
+        let mut current_hash:[u8;32] = Node::hash_nodes(input);
         let mut counter: usize = 1;
         loop{
             input = [&current_hash, &hashes[counter]];
-            current_hash = Node::hashNodes(input);
+            current_hash = Node::hash_nodes(input);
             counter += 1; 
 
             if counter == hashes.len() - 1{
@@ -311,7 +311,7 @@ impl Node{
         self.copied
     }
     
-    fn hashNodes(input: [&[u8;32];2]) -> [u8;32] {
+    fn hash_nodes(input: [&[u8;32];2]) -> [u8;32] {
         let mut hasher = Keccak::v256();
         let mut output = [0u8; 32];
         hasher.update(input[0]);
@@ -328,11 +328,11 @@ struct Leaf{
 impl Leaf{
     fn new(leaf_data: &'static str) -> Self{
         let mut x = leaf_data.as_bytes();
-        Leaf::hashLeaf(x);
+        Leaf::hash_leaf(x);
         Self{data: leaf_data/* , hashed_data: x*/}
     }
     
-    fn hashLeaf(input: &[u8]) -> [u8;32] {
+    fn hash_leaf(input: &[u8]) -> [u8;32] {
         let mut hasher = Keccak::v256();
         let mut output = [0u8; 32];
         hasher.update(input);
@@ -351,7 +351,7 @@ fn main(){
     let e = Leaf::new("e");
     let leafs = vec![a.clone(), b, c, d, e];
     let mut tree = Tree{
-        root: Node::new(Box::new(None), Box::new(None),Box::new(None), Leaf::hashLeaf(a.data.as_bytes())),
+        root: Node::new(Box::new(None), Box::new(None),Box::new(None), Leaf::hash_leaf(a.data.as_bytes())),
         nodes: vec![],
         depth: 0,
     };
