@@ -1,5 +1,5 @@
 extern crate tiny_keccak;
-use std::fmt::Display;
+use std::{fmt::Display};
 
 use tiny_keccak::Keccak;
 use crate::tiny_keccak::Hasher;
@@ -88,17 +88,18 @@ struct Tree{
             //divide # of starting nodes by 2, represents remaining population of nodes that can be hashed together
             n = n / 2;
             //if there is an odd number of nodes excluding the root, insert copy of the [len-1] node
+            let length : usize = self.nodes.len();
             if n > 1 && n % 2 == 1{
-                children_nodes.push(children_nodes[len -1].clone());
-                self.nodes.push(children_nodes[len -1].clone());
-                self.nodes[len-1].copied = true;
+                children_nodes.push(children_nodes[length -1].clone());
+                self.nodes.push(children_nodes[length -1].clone());
+                self.nodes[length -1].copied = true;
             }
             if n == 1{
                 self.root = Node{                        
-                    left_child: Box::new(Some(self.nodes[len - 2].clone())),
-                    right_child: Box::new(Some(self.nodes[len - 1].clone())),
+                    left_child: Box::new(Some(self.nodes[length - 3].clone())),
+                    right_child: Box::new(Some(self.nodes[length - 2].clone())),
                     parent: Box::new(None),
-                    hash: Node::hashNodes([&self.nodes[len - 2].hash.clone(), &self.nodes[len - 1].hash.clone()]),
+                    hash: self.nodes[length - 1].hash,
                     copied: false,
                     index: self.nodes.len() + 1,
                 };
@@ -294,6 +295,8 @@ impl Node{
         output
     }
 }
+#[derive(Clone, Debug)]
+
 struct Leaf{
     data: &'static str,
 }
@@ -315,5 +318,16 @@ impl Leaf{
 
 
 fn main(){
-    todo!();
+
+    let a = Leaf::new("a");
+    let b = Leaf::new("b");
+    let c = Leaf::new("c");
+    let d = Leaf::new("d");
+    let leafs = vec![a.clone(), b, c, d];
+    let mut tree = Tree{
+        root: Node::new(Box::new(None), Box::new(None),Box::new(None), Leaf::hashLeaf(a.data.as_bytes())),
+        nodes: vec![],
+        depth: 0,
+    };
+    Tree::new(tree, leafs);
 }
