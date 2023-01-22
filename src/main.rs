@@ -33,7 +33,7 @@ struct Tree{
         if len % 2 == 1 { 
             children_nodes.push(children_nodes[len -1].clone()); 
             children_nodes[len-1].copied = true;
-            println!("child hash: {:?}", &children_nodes[len-1].hash);
+            println!("inserted child hash: {:?}", &children_nodes[len-1].hash);
         }
 
         let mut n = children_nodes.len();
@@ -93,7 +93,8 @@ struct Tree{
                 children_nodes.push(children_nodes[length -1].clone());
                 self.nodes.push(children_nodes[length -1].clone());
                 self.nodes[length -1].copied = true;
-                println!("inserted node hash: {:?}", self.nodes[length-1].hash)
+                println!("inserted node hash: {:?}", self.nodes[length-1].hash);
+                n += 1;
             }
             if n == 1{
                 self.root = Node{                        
