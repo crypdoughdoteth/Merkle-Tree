@@ -93,6 +93,7 @@ struct Tree{
                 children_nodes.push(children_nodes[length -1].clone());
                 self.nodes.push(children_nodes[length -1].clone());
                 self.nodes[length -1].copied = true;
+                println!("inserted node hash: {:?}", self.nodes[length-1].hash)
             }
             if n == 1{
                 self.root = Node{                        
@@ -323,7 +324,8 @@ fn main(){
     let b = Leaf::new("b");
     let c = Leaf::new("c");
     let d = Leaf::new("d");
-    let leafs = vec![a.clone(), b, c, d];
+    let e = Leaf::new("e");
+    let leafs = vec![a.clone(), b, c, d, e];
     let mut tree = Tree{
         root: Node::new(Box::new(None), Box::new(None),Box::new(None), Leaf::hashLeaf(a.data.as_bytes())),
         nodes: vec![],
