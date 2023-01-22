@@ -24,6 +24,7 @@ struct Tree{
         let mut parent_nodes: Vec<Node> = Vec::new();
         let mut children_nodes: Vec<Node> = leafs.iter().map(|x|{
            let x_hashed = Leaf::hashLeaf(x.data.as_bytes());
+           println!("child hash: {:?}", &x_hashed);
             Node::new(Box::new(None), Box::new(None),Box::new(None), x_hashed)
         }).collect();
 
@@ -32,6 +33,7 @@ struct Tree{
         if len % 2 == 1 { 
             children_nodes.push(children_nodes[len -1].clone()); 
             children_nodes[len-1].copied = true;
+            println!("child hash: {:?}", &children_nodes[len-1].hash);
         }
 
         let mut n = children_nodes.len();
@@ -46,7 +48,7 @@ struct Tree{
                 let array = [&children_nodes[i].hash, &children_nodes[i + 1].hash];
                 //hash nodes together
                 let new_node_hash = Node::hashNodes(array);
-
+                println!("node hash: {:?}", &new_node_hash);
                 let new_node =                    
                     Node{ 
                         left_child: Box::new(Some(children_nodes[i].clone())),
@@ -92,7 +94,6 @@ struct Tree{
                 self.nodes[len-1].copied = true;
             }
             if n == 1{
-               
                 self.root = Node{                        
                     left_child: Box::new(Some(self.nodes[len - 2].clone())),
                     right_child: Box::new(Some(self.nodes[len - 1].clone())),
@@ -100,7 +101,8 @@ struct Tree{
                     hash: Node::hashNodes([&self.nodes[len - 2].hash.clone(), &self.nodes[len - 1].hash.clone()]),
                     copied: false,
                     index: self.nodes.len() + 1,
-                }
+                };
+                println!("root: {:?}", self.root.hash);
             }
         }
         self
