@@ -134,6 +134,10 @@ struct Tree{
         
         loop{
             
+            if &current_hash == &self.root.hash{
+                return proof_hashes;
+            }
+
             match *current_parent_node.clone(){
                 Some(parent_node) => {
 
@@ -153,7 +157,7 @@ struct Tree{
                                     Some(x) => {
                                         continue;
                                     },
-                                    None => return proof_hashes,
+                                    None => (),
                                 }
                             }
                         },
@@ -171,7 +175,7 @@ struct Tree{
                                     Some(x) => {
                                         continue;
                                     },
-                                    None => return proof_hashes,
+                                    None => (),
                                 }
                             }
                         },
@@ -350,7 +354,7 @@ fn main(){
     let d = Leaf::new("d");
     let e = Leaf::new("e");
     let leafs = vec![a.clone(), b, c, d, e];
-    let mut tree = Tree{
+    let tree = Tree{
         root: Node::new(Box::new(None), Box::new(None),Box::new(None), Leaf::hash_leaf(a.data.as_bytes())),
         nodes: vec![],
         depth: 0,
