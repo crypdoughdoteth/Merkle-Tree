@@ -121,14 +121,13 @@ struct Tree{
 
     fn generate_proof(self, leaf: Node) -> Vec<[u8;32]> {
         // start with leaf node => use pointer to parent node. Parent node has two children, one of which is the other hash that made it. Push hash to proof vec =>
-        // Once the first hash is located, we then may query the parent of the first non-leaf node => search children for matching hash =>  push has to proof vec => repeat until root
+        // Once the first hash is located, we then may query the parent of the first non-leaf node => search children for matching hash =>  push hash to proof vec => repeat until root
         
         let mut proof_hashes:  Vec<[u8;32]> = vec![];
         let mut current_parent_node = leaf.parent; 
         let mut current_hash: [u8;32] = leaf.hash.clone();
         
         loop{
-
             
             match *current_parent_node.clone(){
                 Some(parent_node) => {
@@ -142,11 +141,12 @@ struct Tree{
                         Some(the_left_child) => {
                             if &the_left_child.hash != &current_hash.clone(){
                                 proof_hashes.push(the_left_child.hash);
+                               current_hash = parent_node.hash.clone();
                                 //set new parent node -- the parent of the current parent, set current parent's hash to current hash
                                 current_parent_node = parent_node.parent.clone();
                                 match *current_parent_node.clone(){
                                     Some(x) => {
-                                        current_hash = x.hash;
+                                        continue;
                                     },
                                     None => return proof_hashes,
                                 }
@@ -159,11 +159,12 @@ struct Tree{
                         Some(the_right_child) => {
                             if &the_right_child.hash != &current_hash.clone(){
                                 proof_hashes.push(the_right_child.hash);
+                                current_hash = parent_node.hash.clone();
                                 current_parent_node = parent_node.parent;
 
                                 match *current_parent_node.clone(){
                                     Some(x) => {
-                                        current_hash = x.hash;
+                                        continue;
                                     },
                                     None => return proof_hashes,
                                 }
