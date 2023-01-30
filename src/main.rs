@@ -87,8 +87,8 @@ struct Tree{
                 children_nodes.push(children_nodes[children_nodes.len() -1].clone());
                 self.nodes.push(children_nodes[children_nodes.len() -1].clone());
                 self.nodes[length -1].copied = true;
-                // self.neighbors.insert(children_nodes[children_nodes.len() -1].hash, children_nodes[children_nodes.len() - 2].hash);
-                // self.neighbors.insert(children_nodes[children_nodes.len() -2].hash, children_nodes[children_nodes.len() - 1].hash);
+                self.neighbors.insert(children_nodes[children_nodes.len() -1].hash, children_nodes[children_nodes.len() - 2].hash);
+                self.neighbors.insert(children_nodes[children_nodes.len() -2].hash, children_nodes[children_nodes.len() - 1].hash);
                 println!("inserted node hash: {:#?}", self.nodes[length-1].hash);
                 n += 1;
             }
@@ -107,7 +107,7 @@ struct Tree{
     }
     fn spawn() -> Tree{
         Tree{
-            root: Node::new(Box::new(None), Box::new(None), Leaf::hash_leaf("a".as_bytes())),
+            root: Node::new(Box::new(None), Box::new(None), Leaf::hash_leaf("0x00000000000000000000000000000000".as_bytes())),
             nodes: vec![],
             neighbors: HashMap::new(),
             depth: 0,
@@ -133,8 +133,6 @@ struct Tree{
         //retrieve the corresponding VALUE inside of the HashMap for leaf's hash
         //hash together the resulting hashes
         //lookup result and repeat process
-
-        println!("first K:V : {:?}", self.neighbors.get(&*leaf).expect("no value"));
         let mut idx = index; 
         let mut proof_hashes: Vec<[u8;32]> = vec![];
         let mut current_hash = leaf;
@@ -339,15 +337,15 @@ fn main(){
     let r = Leaf::new("r");
     let s = Leaf::new("s");
     let t = Leaf::new("t");
-    let leafs = vec![a, b, c, d, e, f, g.clone(), h, i, j, k, l, m, n, o, p, q, r, s, t];
+    let leafs = vec![a, b, c, d, e, f, g, h.clone(), i, j, k, l, m, n, o, p, q, r, s, t];
 
     let x = Tree::new(Tree::spawn(), leafs);
 
-    let g_hashed = Leaf::hash_leaf(&g.data.as_bytes());
-    let elements =  Tree::generate_proof(x.clone(), &g_hashed, 6).expect("no proof bruh");
+    let h_hashed = Leaf::hash_leaf(&h.data.as_bytes());
+    let elements =  Tree::generate_proof(x.clone(), &h_hashed, 7).expect("no proof bruh");
     println!("Proof Elements: {:?}", &elements);
 
-    let verified: bool = verify_proof(x.root.hash, g, elements, 6);
+    let verified: bool = verify_proof(x.root.hash, h, elements, 7);
     println!("Valid Leaf: {}", verified);
 
  }
