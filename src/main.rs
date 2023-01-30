@@ -51,10 +51,8 @@ struct Tree{
                 let node_two = children_nodes[i+ 1].hash.clone();
                 self.neighbors.insert(node_one, node_two);
                 self.neighbors.insert(node_two, node_one);
-                //create input for Node::hash_nodes()
-                let array = [&node_one, &node_two];
                 //hash nodes together
-                let new_node_hash = Node::hash_nodes(array);
+                let new_node_hash = Node::hash_nodes([&node_one, &node_two]);
 
                 println!("node hash: {:?}", &new_node_hash);
                 let new_node =                    
@@ -105,7 +103,14 @@ struct Tree{
         }
         self
     }
-
+    fn spawn() -> Tree{
+        Tree{
+            root: Node::new(Box::new(None), Box::new(None), Leaf::hash_leaf("a".as_bytes())),
+            nodes: vec![],
+            neighbors: HashMap::new(),
+            depth: 0,
+        }
+    }
     //we can calculate a balanced tree's number of elements by 2^(depth)
     fn print_tree(self) {
 
@@ -120,13 +125,13 @@ struct Tree{
     }
 
     //use hashmap to locate neighbored elements and generate parent node hashes
-    fn generate_proof(self, leaf: &[u8;32]) -> Option<Vec<[u8;32]>> {
+    fn generate_proof(self, leaf: &[u8;32], index: usize) -> Option<Vec<[u8;32]>> {
 
         //strat 2.0: the leaf hash we receive MUST be located in the HashMap, else throw error, invalid leaf (or end of set).
         //retrieve the corresponding VALUE inside of the HashMap for leaf's hash
         //hash together the resulting hashes
         //lookup result and repeat process
-        
+        let mut idx = index; 
         let mut proof_hashes: Vec<[u8;32]> = vec![];
         let mut current_hash = leaf;
         let mut parent_node_hash:[u8;32];
@@ -134,9 +139,16 @@ struct Tree{
             let neighbor_hash = self.neighbors.get(current_hash);
             match neighbor_hash{
                 Some(hash) => {
-                    parent_node_hash = Node::hash_nodes([current_hash, hash]);
+                    if idx % 2 == 0 {
+                        parent_node_hash = Node::hash_nodes([current_hash, hash]);
+                    }
+                    else{
+                        parent_node_hash = Node::hash_nodes([hash, current_hash]);
+
+                    }
                     proof_hashes.push(*hash);
                     current_hash = &parent_node_hash;
+                    idx /= 2;
                 },
                 //if we cannot locate a value in the mapping given the key, break the loop and return the vector of hashes
                 None => break,
@@ -240,19 +252,7 @@ impl Node{
     fn new(lc: Box<Option<Node>>, rc: Box<Option<Node>>, h: [u8;32]) -> Node{
         Self{left_child: lc, right_child: rc, hash: h, copied: false, index : 0}
     }
-    fn get_left(self) -> Box<Option<Node>>{
-        self.left_child
-    }
-    fn get_right(self) -> Box<Option<Node>>{
-        self.right_child
-    }
-    fn get_hash(self) -> [u8;32]{
-        self.hash
-    }
-    fn is_copied(self) -> bool{
-        self.copied
-    }
-    
+
     fn hash_nodes(input: [&[u8;32];2]) -> [u8;32] {
         let mut hasher = Keccak::v256();
         let mut output = [0u8; 32];
@@ -322,22 +322,16 @@ fn main(){
     let d = Leaf::new("d");
     let e = Leaf::new("e");
 
-    let leafs = vec![a.clone(), b, c, d, e];
-    let tree = Tree{
-        root: Node::new(Box::new(None), Box::new(None), Leaf::hash_leaf(a.data.as_bytes())),
-        nodes: vec![],
-        neighbors: HashMap::new(),
-        depth: 0,
-    };
+    let leafs = vec![a, b, c.clone(), d, e];
+
     
-    let x = Tree::new(tree, leafs);
+    let x = Tree::new(Tree::spawn(), leafs);
 
-    let a_hashed = Leaf::hash_leaf(&a.data.as_bytes());
-
-    let elements =  Tree::generate_proof(x.clone(), &a_hashed).expect("no proof bruh");
+    let c_hashed = Leaf::hash_leaf(&c.data.as_bytes());
+    let elements =  Tree::generate_proof(x.clone(), &c_hashed, 2).expect("no proof bruh");
     println!("Proof Elements: {:?}", &elements);
 
-    let verified: bool = verify_proof(x.root.hash, a, elements, 0);
+    let verified: bool = verify_proof(x.root.hash, c, elements, 2);
     println!("Valid Leaf: {}", verified);
 
  }
