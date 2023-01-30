@@ -1,20 +1,20 @@
 extern crate tiny_keccak;
-use std::{fmt::Display};
-
+use std::collections::HashMap;
 use tiny_keccak::Keccak;
 use crate::tiny_keccak::Hasher;
 
 #[warn(dead_code)]
 
+#[derive(Clone, Debug)]
 struct Tree{
     root: Node,
     nodes: Vec<Node>,
+    neighbors: HashMap<[u8;32], [u8;32]>,
     depth: u32,
 }
 
-
  impl Tree{
-     fn new(mut self, leafs: Vec<Leaf>) -> Tree {
+     fn new(mut self, leafs: Vec<Leaf>) -> Tree{
         //returns new merkle tree constructed from leafs: Vec<Leaf>
         // ---------------------------------------
         //creates initial nodes for merkle tree
@@ -25,7 +25,9 @@ struct Tree{
         let mut children_nodes: Vec<Node> = leafs.iter().map(|x|{
            let x_hashed = Leaf::hash_leaf(x.data.as_bytes());
            println!("child hash: {:?}", &x_hashed);
-            Node::new(Box::new(None), Box::new(None),Box::new(None), x_hashed)
+            let y = Node::new(Box::new(None), Box::new(None), x_hashed);
+            self.nodes.push(y.clone());
+            y
         }).collect();
 
         //check length of leaf nodes, if there is an odd number of leaf nodes, copy the odd element and push it to the array
@@ -44,39 +46,33 @@ struct Tree{
             let mut i = 0;
             //iterates over children_nodes to create new parent nodes
             while i < n - 1 {
+                //link neighbors using hashmap, allows us to reconstruct the tree later with K:V pairs
+                let node_one = children_nodes[i].hash.clone();
+                let node_two = children_nodes[i+ 1].hash.clone();
+                self.neighbors.insert(node_one, node_two);
+                self.neighbors.insert(node_two, node_one);
                 //create input for Node::hash_nodes()
-                let array = [&children_nodes[i].hash, &children_nodes[i + 1].hash];
+                let array = [&node_one, &node_two];
                 //hash nodes together
                 let new_node_hash = Node::hash_nodes(array);
+
                 println!("node hash: {:?}", &new_node_hash);
                 let new_node =                    
                     Node{ 
                         left_child: Box::new(Some(children_nodes[i].clone())),
                         right_child: Box::new(Some(children_nodes[i + 1].clone())),
-                        parent: Box::new(None),
                         hash: new_node_hash,
                         copied: false, 
                         index: o,
                     };
                 parent_nodes.push(new_node.clone());
-                self.nodes.push(new_node.clone());
+                self.nodes.push(new_node);
+                
 
-                children_nodes[i] = Node{
-                    left_child: children_nodes[i].left_child.clone(),
-                    right_child: children_nodes[i].right_child.clone(),
-                    parent: Box::new(Some(new_node.clone())),
-                    hash: children_nodes[i].hash,
-                    copied: children_nodes[i].copied, 
-                    index: children_nodes[i].index,
-                };
-                children_nodes[i + 1] = Node{
-                    left_child: children_nodes[i+1].left_child.clone(),
-                    right_child: children_nodes[i+1].right_child.clone(),
-                    parent: Box::new(Some(new_node.clone())),
-                    hash: children_nodes[i+1].hash,
-                    copied: children_nodes[i+1].copied, 
-                    index: children_nodes[i+1].index,
-                };
+
+                //println!("node child left: {:#?}", &new_node.left_child);
+                //println!("node child right: {:#?}", &new_node.right_child);
+                
                 o += 1; 
                 //increment loop by 2
                 i += 2;
@@ -90,22 +86,21 @@ struct Tree{
             //if there is an odd number of nodes excluding the root, insert copy of the [len-1] node
             let length : usize = self.nodes.len();
             if n > 1 && n % 2 == 1{
-                children_nodes.push(children_nodes[length -1].clone());
-                self.nodes.push(children_nodes[length -1].clone());
+                children_nodes.push(children_nodes[children_nodes.len() -1].clone());
+                self.nodes.push(children_nodes[children_nodes.len() -1].clone());
                 self.nodes[length -1].copied = true;
-                println!("inserted node hash: {:?}", self.nodes[length-1].hash);
+                println!("inserted node hash: {:#?}", self.nodes[length-1].hash);
                 n += 1;
             }
             if n == 1{
                 self.root = Node{                        
                     left_child: Box::new(Some(self.nodes[length - 3].clone())),
                     right_child: Box::new(Some(self.nodes[length - 2].clone())),
-                    parent: Box::new(None),
                     hash: self.nodes[length - 1].hash,
                     copied: false,
                     index: self.nodes.len() + 1,
                 };
-                println!("root: {:?}", self.root.hash);
+                println!("root: {:#?}", self.root.hash);
             }
         }
         self
@@ -124,95 +119,39 @@ struct Tree{
         self.root.hash
     }
 
-    fn generate_proof(self, leaf: Node) -> Vec<[u8;32]> {
-        // start with leaf node => use pointer to parent node. Parent node has two children, one of which is the other hash that made it. Push hash to proof vec =>
-        // Once the first hash is located, we then may query the parent of the first non-leaf node => search children for matching hash =>  push hash to proof vec => repeat until root
+    //use hashmap to locate neighbored elements and generate parent node hashes
+    fn generate_proof(self, leaf: &[u8;32]) -> Option<Vec<[u8;32]>> {
+
+        //strat 2.0: the leaf hash we receive MUST be located in the HashMap, else throw error, invalid leaf (or end of set).
+        //retrieve the corresponding VALUE inside of the HashMap for leaf's hash
+        //hash together the resulting hashes
+        //lookup result and repeat process
         
-        let mut proof_hashes:  Vec<[u8;32]> = vec![];
-        let mut current_parent_node = leaf.parent; 
-        let mut current_hash: [u8;32] = leaf.hash.clone();
-        
+        let mut proof_hashes: Vec<[u8;32]> = vec![];
+        let mut current_hash = leaf;
+        let mut parent_node_hash:[u8;32];
         loop{
-            
-            if &current_hash == &self.root.hash{
-                return proof_hashes;
-            }
-
-            match *current_parent_node.clone(){
-                Some(parent_node) => {
-
-                    //match left and right child hashes to see if it matches current hash (hash of child we are using to reconstruct the node with)
-                    //look for the hash that doesn't match itself 
-                    let left = parent_node.left_child.clone();
-                    let right = parent_node.right_child.clone();
-
-                    match *left{
-                        Some(the_left_child) => {
-                            if &the_left_child.hash != &current_hash.clone(){
-                                proof_hashes.push(the_left_child.hash);
-                               current_hash = parent_node.hash.clone();
-                                //set new parent node -- the parent of the current parent, set current parent's hash to current hash
-                                current_parent_node = parent_node.parent.clone();
-                                match *current_parent_node.clone(){
-                                    Some(x) => {
-                                        continue;
-                                    },
-                                    None => (),
-                                }
-                            }
-                        },
-                        None => (),
-                    }
-                    
-                    match *right{
-                        Some(the_right_child) => {
-                            if &the_right_child.hash != &current_hash.clone(){
-                                proof_hashes.push(the_right_child.hash);
-                                current_hash = parent_node.hash.clone();
-                                current_parent_node = parent_node.parent;
-
-                                match *current_parent_node.clone(){
-                                    Some(x) => {
-                                        continue;
-                                    },
-                                    None => (),
-                                }
-                            }
-                        },
-                        None => (),
-                    }
-
+            let neighbor_hash = self.neighbors.get(current_hash);
+            match neighbor_hash{
+                Some(hash) => {
+                    parent_node_hash = Node::hash_nodes([current_hash, hash]);
+                    proof_hashes.push(*hash);
+                    current_hash = &parent_node_hash;
                 },
-
-                None => (),
-            }    
-        
-        }  
-    }
-    
-    fn verify_proof(self, leaf: Leaf, hashes: Vec<[u8;32]>) -> bool{
-
-        let root = self.root.hash;
-        let child_node = Leaf::hash_leaf(leaf.data.as_bytes());
-        let mut input = [&child_node, &hashes[0]];
-        let mut current_hash:[u8;32] = Node::hash_nodes(input);
-        let mut counter: usize = 1;
-        loop{
-            input = [&current_hash, &hashes[counter]];
-            current_hash = Node::hash_nodes(input);
-            counter += 1; 
-
-            if counter == hashes.len() - 1{
-                break;
-            }
+                //if we cannot locate a value in the mapping given the key, break the loop and return the vector of hashes
+                None => break,
+            }           
         }
-        if root == current_hash{
-            true
+       
+        if proof_hashes.len() == 0 {
+           return None;
         }
         else{
-            false
+            Some(proof_hashes)
         }
+
     }
+    
     
     //okay, I gotta refactor this to be cleaner. I don't need this extra loop sequence
 fn search_tree(self, intermediate_hashes: Vec<[u8;32]>, leaf: [u8;32]) -> bool{
@@ -292,15 +231,14 @@ fn search_tree(self, intermediate_hashes: Vec<[u8;32]>, leaf: [u8;32]) -> bool{
 struct Node{
     left_child: Box<Option<Node>>,
     right_child: Box<Option<Node>>,
-    parent: Box<Option<Node>>,
     hash: [u8;32],
     copied: bool,
     index: usize,
 }
 
 impl Node{
-    fn new(lc: Box<Option<Node>>, rc: Box<Option<Node>>, p:Box<Option<Node>>, h: [u8;32]) -> Node{
-        Self{left_child: lc, right_child: rc, parent: p, hash: h, copied: false, index : 0}
+    fn new(lc: Box<Option<Node>>, rc: Box<Option<Node>>, h: [u8;32]) -> Node{
+        Self{left_child: lc, right_child: rc, hash: h, copied: false, index : 0}
     }
     fn get_left(self) -> Box<Option<Node>>{
         self.left_child
@@ -331,9 +269,9 @@ struct Leaf{
 }
 impl Leaf{
     fn new(leaf_data: &'static str) -> Self{
-        let mut x = leaf_data.as_bytes();
+        let x = leaf_data.as_bytes();
         Leaf::hash_leaf(x);
-        Self{data: leaf_data/* , hashed_data: x*/}
+        Self{data: leaf_data}
     }
     
     fn hash_leaf(input: &[u8]) -> [u8;32] {
@@ -345,6 +283,36 @@ impl Leaf{
     }
 }   
 
+fn verify_proof(merkle_root: [u8;32], leaf: Leaf, hashes: Vec<[u8;32]>, index: usize) -> bool{
+    let mut counter = 0;
+    let mut idx = index;
+    let mut hash = Leaf::hash_leaf(leaf.data.as_bytes());
+    let mut verified = false;
+    loop{
+        let proof_element = hashes[counter];
+        
+        if idx % 2 == 0 {
+            hash = Node::hash_nodes([&hash, &proof_element]);
+        }
+        else{
+            hash = Node::hash_nodes([&proof_element, &hash]);
+        }
+        println!("Verifying...{:?}", &hash);
+
+        if hash == merkle_root{
+           verified = true;
+           break
+        }
+        if counter == hashes.len() - 1{
+            break;
+        }
+        counter += 1;
+        idx /= 2;
+    }
+
+    verified
+
+}
 
 fn main(){
 
@@ -353,11 +321,23 @@ fn main(){
     let c = Leaf::new("c");
     let d = Leaf::new("d");
     let e = Leaf::new("e");
+
     let leafs = vec![a.clone(), b, c, d, e];
     let tree = Tree{
-        root: Node::new(Box::new(None), Box::new(None),Box::new(None), Leaf::hash_leaf(a.data.as_bytes())),
+        root: Node::new(Box::new(None), Box::new(None), Leaf::hash_leaf(a.data.as_bytes())),
         nodes: vec![],
+        neighbors: HashMap::new(),
         depth: 0,
     };
-    Tree::new(tree, leafs);
-}
+    
+    let x = Tree::new(tree, leafs);
+
+    let a_hashed = Leaf::hash_leaf(&a.data.as_bytes());
+
+    let elements =  Tree::generate_proof(x.clone(), &a_hashed).expect("no proof bruh");
+    println!("Proof Elements: {:?}", &elements);
+
+    let verified: bool = verify_proof(x.root.hash, a, elements, 0);
+    println!("Valid Leaf: {}", verified);
+
+ }
