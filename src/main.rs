@@ -1,7 +1,12 @@
 extern crate tiny_keccak;
 use std::collections::HashMap;
+use std::io::{BufReader, Read, Write};
 use tiny_keccak::Keccak;
 use crate::tiny_keccak::Hasher;
+use serde_json::{Result, Value, json};
+use serde::{Serialize, Deserialize};
+use std::path::Path;
+use std::fs::{File};
 
 #[warn(dead_code)]
 
@@ -166,78 +171,7 @@ struct Tree{
     }
     
     
-    //okay, I gotta refactor this to be cleaner. I don't need this extra loop sequence
-fn search_tree(self, intermediate_hashes: Vec<[u8;32]>, leaf: [u8;32]) -> bool{
-        //stategy: root => match ((left child || right child), intermediate_hash[i])  => node @ matched index ... => ... =>    
-        
-        let mut found: bool = false;
-        
-        let mut ptr = 0;
-        
-        match &*self.root.left_child {
-            Some(x) => {
 
-                if x.hash == leaf{
-                    found = true;
-                }
-                if x.hash == intermediate_hashes[0]{
-                    ptr = x.index;
-                }
-            },
-            None => ()
-        };
-        if found == true { return found; }
-
-        match &*self.root.right_child {
-            Some(x) => {
-
-                if x.hash == leaf{
-                    found = true;
-                }
-                if x.hash == intermediate_hashes[0]{
-                    ptr = x.index;
-                }
-            },
-            None => ()
-        };
-        if found == true { return found; }
-        //counter for intermediate hashes variable
-        let mut int_hashes: usize = 1;
-        //for keeping track of depth
-        let mut i: usize = 2;
-        while i < self.depth.try_into().unwrap() {
-
-           let node = &self.nodes[ptr];
-           
-            match &*node.left_child {
-                Some(x) => {
-                    if x.hash == leaf{
-                        found = true;
-                    }
-                    if x.hash == intermediate_hashes[int_hashes]{
-                        ptr = x.index;
-                    }
-                },
-                None => ()
-             };
-             match &*node.right_child {
-                Some(x) => {
-                    if x.hash == leaf{
-                        found = true;
-                    }
-                    if x.hash == intermediate_hashes[int_hashes]{
-                        ptr = x.index;
-                    }
-                },
-                None => ()
-
-                };
-            if found == true { return found; }
-            int_hashes += 1;
-            i += 1; 
-        };
-        found
-     }
 }
 
 #[derive(Clone, Debug)]
@@ -314,38 +248,103 @@ fn verify_proof(merkle_root: [u8;32], leaf: Leaf, hashes: Vec<[u8;32]>, index: u
     verified
 
 }
+#[derive(Deserialize, Serialize)]
+struct InputData{
+    leafs: Vec<String>,
+}
 
-fn main(){
+#[derive(Deserialize, Serialize)]
+struct OutputData{
+    proof: Vec<[u8;32]>,
+    index: usize, 
+    verified: bool,
+    root: [u8;32]
+}
+fn main() -> Result<()>{
+    //file path prompt
+    let mut userpath = String::new();
+    println!("JSON file path: ");
+    std::io::stdin().read_line(&mut userpath).unwrap();
+    let path = Path::new(&userpath);
+    // asks for index in the array
+    let mut proofelement = String::new();
+    println!("Generate and Verify Proof For Index #: {}", &proofelement);
+    std::io::stdin().read_line(&mut proofelement).unwrap();
+    let element: usize = proofelement.parse().unwrap();
+   
+    //--------------------------------------------------------------------
+    // todo!();
+    // let file = File::open(path).expect("failed to open");
+    // let mut reader = BufReader::new(file);
+    // let mut contents = String::new();
+    // reader.read_to_string(&mut contents).expect("failed to translate");
+    // //deserialize
+    // let raw_data: InputData = serde_json::from_str(contents.as_str()).expect("failed to deserialize");
+    // //translate to vector of Leafs
+    // let leafs: Vec<Leaf> = raw_data.leafs.iter().map(move |x|{
+    //     Leaf::new(x)
+    // }).collect();
+    // //create new tree and populate it with supplied Leafs
+    // let tree = Tree::new(Tree::spawn(), leafs.clone());
+    // //generate proof elements for proof element @ index
+    // let proof = tree.clone().generate_proof(&Leaf::hash_leaf(leafs[element].data.clone().as_bytes()), element).expect("proof failed");
+    // // verify for inclusion ... just to make sure
+    // let verified: bool = verify_proof(tree.get_root().clone(), leafs[element], proof.clone(), element);
+    // //format data
+    // let proof_data = OutputData{
+    //     proof: proof,
+    //     index: element,
+    //     verified: verified,
+    //     root: tree.get_root(),
+    // };
+    // //serialize data
+    // let new_json = serde_json::to_string(&proof_data).expect("failed to parse");
+    // //create new file
+    // let mut new_file = File::create("proof.json").expect("file creation failed");
+    // //write to file
+    // new_file.write_all(new_json.as_bytes());
+    Ok(())
+ }
 
-    let a = Leaf::new("a");
-    let b = Leaf::new("b");
-    let c = Leaf::new("c");
-    let d = Leaf::new("d");
-    let e = Leaf::new("e");
-    let f = Leaf::new("f");
-    let g = Leaf::new("g");
-    let h = Leaf::new("h");
-    let i = Leaf::new("i");
-    let j = Leaf::new("j");
-    let k = Leaf::new("k");
-    let l = Leaf::new("l");
-    let m = Leaf::new("m");
-    let n = Leaf::new("n");
-    let o = Leaf::new("o");
-    let p = Leaf::new("p");
-    let q = Leaf::new("q");
-    let r = Leaf::new("r");
-    let s = Leaf::new("s");
-    let t = Leaf::new("t");
-    let leafs = vec![a, b, c, d, e, f, g, h.clone(), i, j, k, l, m, n, o, p, q, r, s, t];
+ #[cfg(test)]
+ mod tests{
 
-    let x = Tree::new(Tree::spawn(), leafs);
+    use super::*;
+    #[test]
+    fn test_run(){
+        let a = Leaf::new("a");
+        let b = Leaf::new("b");
+        let c = Leaf::new("c");
+        let d = Leaf::new("d");
+        let e = Leaf::new("e");
+        let f = Leaf::new("f");
+        let g = Leaf::new("g");
+        let h = Leaf::new("h");
+        let i = Leaf::new("i");
+        let j = Leaf::new("j");
+        let k = Leaf::new("k");
+        let l = Leaf::new("l");
+        let m = Leaf::new("m");
+        let n = Leaf::new("n");
+        let o = Leaf::new("o");
+        let p = Leaf::new("p");
+        let q = Leaf::new("q");
+        let r = Leaf::new("r");
+        let s = Leaf::new("s");
+        let t = Leaf::new("t");
+        let leafs = vec![a, b, c, d, e, f, g, h.clone(), i, j, k, l, m, n, o, p, q, r, s, t];
+    
+        let x = Tree::new(Tree::spawn(), leafs);
+    
+        let h_hashed = Leaf::hash_leaf(&h.data.as_bytes());
+        let elements =  Tree::generate_proof(x.clone(), &h_hashed, 7).expect("no proof bruh");
+        //println!("Proof Elements: {:?}", &elements);
+    
+        let verified: bool = verify_proof(x.root.hash, h, elements, 7);
+        println!("Valid Leaf: {}", verified);
+        assert!(verified == true);
+    }
 
-    let h_hashed = Leaf::hash_leaf(&h.data.as_bytes());
-    let elements =  Tree::generate_proof(x.clone(), &h_hashed, 7).expect("no proof bruh");
-    println!("Proof Elements: {:?}", &elements);
-
-    let verified: bool = verify_proof(x.root.hash, h, elements, 7);
-    println!("Valid Leaf: {}", verified);
 
  }
+
