@@ -260,51 +260,7 @@ struct OutputData{
     verified: bool,
     root: [u8;32]
 }
-fn main() -> Result<()>{
-    //file path prompt
-    let mut userpath = String::new();
-    println!("JSON file path: ");
-    std::io::stdin().read_line(&mut userpath).unwrap();
-    let path = Path::new(&userpath);
-    // asks for index in the array
-    let mut proofelement = String::new();
-    println!("Generate and Verify Proof For Index #: {}", &proofelement);
-    std::io::stdin().read_line(&mut proofelement).unwrap();
-    let element: usize = proofelement.parse().unwrap();
-   
-    //--------------------------------------------------------------------
-    // todo!();
-    // let file = File::open(path).expect("failed to open");
-    // let mut reader = BufReader::new(file);
-    // let mut contents = String::new();
-    // reader.read_to_string(&mut contents).expect("failed to translate");
-    // //deserialize
-    // let raw_data: InputData = serde_json::from_str(contents.as_str()).expect("failed to deserialize");
-    // //translate to vector of Leafs
-    // let leafs: Vec<Leaf> = raw_data.leafs.iter().map(move |x|{
-    //     Leaf::new(x)
-    // }).collect();
-    // //create new tree and populate it with supplied Leafs
-    // let tree = Tree::new(Tree::spawn(), leafs.clone());
-    // //generate proof elements for proof element @ index
-    // let proof = tree.clone().generate_proof(&Leaf::hash_leaf(leafs[element].data.clone().as_bytes()), element).expect("proof failed");
-    // // verify for inclusion ... just to make sure
-    // let verified: bool = verify_proof(tree.get_root().clone(), leafs[element], proof.clone(), element);
-    // //format data
-    // let proof_data = OutputData{
-    //     proof: proof,
-    //     index: element,
-    //     verified: verified,
-    //     root: tree.get_root(),
-    // };
-    // //serialize data
-    // let new_json = serde_json::to_string(&proof_data).expect("failed to parse");
-    // //create new file
-    // let mut new_file = File::create("proof.json").expect("file creation failed");
-    // //write to file
-    // new_file.write_all(new_json.as_bytes());
-    Ok(())
- }
+
 
  #[cfg(test)]
  mod tests{
