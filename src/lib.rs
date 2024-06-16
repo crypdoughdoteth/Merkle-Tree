@@ -15,7 +15,6 @@ pub enum NodeLocation {
 impl MerkleTree {
     pub fn new<T: AsRef<[u8]> + Default + Clone>(mut elements: Vec<T>) -> MerkleTree {
         MerkleTree::pad_elements(&mut elements);
-        println!("{}", elements.len());
         let elements = elements
             .iter()
             .map(|e| Self::hash(e.as_ref()))
@@ -51,20 +50,21 @@ impl MerkleTree {
     }
 
     pub fn merkle_root(&self) -> MerkleRoot {
-        MerkleRoot(
-            (0..(self.elements.len() / 2) - 1).into_iter().fold(
-                self.elements.clone(),
-                |mut acc, _| {
-                    let new_set = acc
-                        .into_par_iter()
-                        .chunks(2)
-                        .map(|e| Self::concat_hashes(&e[0], &e[1]))
-                        .collect::<Vec<HashValue>>();
-                    acc = new_set;
-                    acc
-                },
-            )[0],
-        )
+        let mut elements = self.elements.clone();
+        loop {
+            if elements.len() == 1 {
+                break;
+            }
+
+            let new_set = elements
+                .into_par_iter()
+                .chunks(2)
+                .map(|e| MerkleTree::concat_hashes(&e[0], &e[1]))
+                .collect::<Vec<HashValue>>();
+            elements = new_set;
+        }
+
+        MerkleRoot(elements[0])
     }
 
     pub fn generate_proof(&self, index: usize) -> (MerkleRoot, MerkleProof) {
@@ -72,22 +72,36 @@ impl MerkleTree {
             (self.elements.clone(), MerkleProof::new(), index),
             |(mut hashes, mut proof, mut idx), _| {
                 let proof_element = hashes[idx];
-                let new_set = hashes.chunks(2).enumerate().fold(
-                    (Vec::new(), Vec::new(), 0),
-                    |mut acc, (i, e)| {
-                        if e.contains(&proof_element) {
-                            if e[0] == proof_element {
-                                acc.0.push(NodeLocation::Right(e[1]));
-                            } else {
-                                acc.0.push(NodeLocation::Left(e[0]));
+                let new_set = hashes
+                    .into_par_iter()
+                    .chunks(2)
+                    .enumerate()
+                    .fold(
+                        || (Vec::new(), Vec::new(), 0),
+                        |mut acc, (i, e)| {
+                            if e.contains(&proof_element) && e.len() == 2 {
+                                if e[0] == proof_element {
+                                    acc.0.push(NodeLocation::Right(e[1]));
+                                } else {
+                                    acc.0.push(NodeLocation::Left(e[0]));
+                                }
+                                acc.2 = i;
                             }
-                            acc.2 = i;
-                        }
-                        let hash = Self::concat_hashes(&e[0], &e[1]);
-                        acc.1.push(hash);
-                        acc
-                    },
-                );
+                            if e.len() == 2 {
+                                acc.1.push(Self::concat_hashes(&e[0], &e[1]))
+                            }
+                            acc
+                        },
+                    )
+                    .reduce(
+                        || (Vec::new(), Vec::new(), 0),
+                        |mut acc, x| {
+                            acc.0.extend_from_slice(&x.0);
+                            acc.1.extend_from_slice(&x.1);
+                            acc.2 += x.2;
+                            acc
+                        },
+                    );
                 hashes = new_set.1;
                 proof.0.extend_from_slice(&new_set.0);
                 idx = new_set.2;
@@ -137,7 +151,7 @@ impl MerkleProof {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
 
     use super::*;
     #[test]
@@ -155,7 +169,21 @@ mod tests {
     }
 
     #[test]
-    fn step_by_step() {
+    fn unpadded() {
+        let values = vec!["a", "b", "c", "d"];
+        let tree = MerkleTree::new(values);
+
+        let first = MerkleTree::concat_hashes(&tree.elements[0], &tree.elements[1]);
+        let second = MerkleTree::concat_hashes(&tree.elements[2], &tree.elements[3]);
+        let root = MerkleTree::concat_hashes(&first, &second);
+
+        assert_eq!(MerkleRoot(root), tree.merkle_root());
+        let (root, proof) = tree.generate_proof(1);
+        assert!(tree.validate_proof(&root, "b", &proof));
+    }
+
+    #[test]
+    fn padded() {
         let values = vec!["a", "b", "c", "d", "e"];
         let tree = MerkleTree::new(values);
         let first = MerkleTree::concat_hashes(&tree.elements[0], &tree.elements[1]);
@@ -166,5 +194,8 @@ mod tests {
         let sixth = MerkleTree::concat_hashes(&third, &fourth);
         let root = MerkleTree::concat_hashes(&fifth, &sixth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
+        let (root, proof) = tree.generate_proof(3);
+        assert!(tree.validate_proof(&root, "d", &proof));
+
     }
 }
