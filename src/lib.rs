@@ -23,8 +23,13 @@ impl MerkleTree {
         Self { elements }
     }
 
-    pub fn new_from_hashes(mut elements: Vec<HashValue>) -> MerkleTree {
+    pub fn new_from_bytes(mut elements: Vec<&[u8]>) -> MerkleTree {
         MerkleTree::pad_elements(&mut elements);
+        let elements = elements
+            .par_iter()
+            .map(|e| Self::hash(e))
+            .collect::<Vec<[u8; 32]>>();
+
         Self { elements }
     }
 
@@ -51,7 +56,11 @@ impl MerkleTree {
         let mut output = [0u8; 32];
         hasher.update(a);
         hasher.finalize(&mut output);
-        output
+        let mut output2 = [0u8; 32];
+        let mut hasher2 = Keccak::v256();
+        hasher2.update(&output);
+        hasher2.finalize(&mut output2);
+        output2
     }
 
     pub fn merkle_root(&self) -> MerkleRoot {
@@ -117,25 +126,6 @@ impl MerkleTree {
         }
         (MerkleRoot(elements[0]), proof)
     }
-
-    pub fn validate_proof<T: AsRef<[u8]> + ?Sized>(
-        &self,
-        root: &MerkleRoot,
-        element: &T,
-        proof: &MerkleProof,
-    ) -> bool {
-        proof
-            .0
-            .iter()
-            .fold(Self::hash(element.as_ref()), |mut acc, e| {
-                acc = match e {
-                    NodeLocation::Left(hash) => Self::concat_hashes(hash, &acc),
-                    NodeLocation::Right(hash) => Self::concat_hashes(&acc, hash),
-                };
-                acc
-            })
-            .eq(&root.0)
-    }
 }
 
 pub type HashValue = [u8; 32];
@@ -145,6 +135,21 @@ pub struct MerkleRoot([u8; 32]);
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MerkleProof(Vec<NodeLocation>);
+
+impl MerkleProof {
+    pub fn validate_proof<T: AsRef<[u8]> + ?Sized>(&self, root: &MerkleRoot, element: &T) -> bool {
+        self.0
+            .iter()
+            .fold(MerkleTree::hash(element.as_ref()), |mut acc, e| {
+                acc = match e {
+                    NodeLocation::Left(hash) => MerkleTree::concat_hashes(hash, &acc),
+                    NodeLocation::Right(hash) => MerkleTree::concat_hashes(&acc, hash),
+                };
+                acc
+            })
+            .eq(&root.0)
+    }
+}
 
 impl MerkleProof {
     pub fn new() -> Self {
@@ -161,21 +166,22 @@ impl MerkleProof {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
 
     use super::*;
+
     #[test]
     fn test_run() {
         let values = vec!["a", "b", "c", "d", "e"];
-
-        let tree = MerkleTree::new(values);
+        let new_values: Vec<&[u8]> = values.par_iter().map(|e| e.as_bytes()).collect();
+        let tree = MerkleTree::new_from_bytes(new_values);
 
         tree.merkle_root();
 
         let (root, proof) = tree.generate_proof(2);
 
-        assert!(tree.validate_proof(&root, "c", &proof));
-        assert!(!tree.validate_proof(&root, "a", &proof));
+        assert!(proof.validate_proof(&root, "c"));
+        assert!(!proof.validate_proof(&root, "a"));
     }
 
     #[test]
@@ -189,7 +195,7 @@ mod test {
 
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(1);
-        assert!(tree.validate_proof(&root, "b", &proof));
+        assert!(proof.validate_proof(&root, "b"));
     }
 
     #[test]
@@ -205,14 +211,14 @@ mod test {
         let root = MerkleTree::concat_hashes(&fifth, &sixth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(3);
-        assert!(tree.validate_proof(&root, "d", &proof));
+        assert!(proof.validate_proof(&root, "d"));
     }
 
     #[test]
     fn sixteen() {
         let values = vec!["a", "b", "c", "d", "e", "f", "g", "h", "i"];
-
-        let tree = MerkleTree::new(values);
+        let new_values: Vec<&[u8]> = values.par_iter().map(|e| e.as_bytes()).collect();
+        let tree = MerkleTree::new(new_values);
         let first = MerkleTree::concat_hashes(&tree.elements[0], &tree.elements[1]);
         let second = MerkleTree::concat_hashes(&tree.elements[2], &tree.elements[3]);
         let third = MerkleTree::concat_hashes(&tree.elements[4], &tree.elements[5]);
@@ -232,6 +238,6 @@ mod test {
         let root = MerkleTree::concat_hashes(&thirteenth, &fourteenth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(6);
-        assert!(tree.validate_proof(&root, "g", &proof));
+        assert!(proof.validate_proof(&root, "g"));
     }
 }
