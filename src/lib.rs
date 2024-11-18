@@ -187,6 +187,10 @@ where
     H: Clone + Copy,
     [(); H::DIGEST_OUTPUT_SIZE + H::DIGEST_OUTPUT_SIZE]:,
 {
+    pub fn from_nodes(proof: Vec<NodeLocation<H>>) -> Self {
+        Self(proof)
+    }
+
     pub fn validate_proof<T: AsRef<[u8]> + ?Sized>(
         &self,
         root: &MerkleRoot<H>,
@@ -205,7 +209,7 @@ where
     }
 
     pub fn new() -> Self {
-        MerkleProof(vec![])
+        MerkleProof(Vec::with_capacity(128))
     }
 
     pub fn push(&mut self, value: NodeLocation<H>) {
