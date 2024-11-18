@@ -38,8 +38,8 @@ pub trait HashFunction {
             let mut whole: [u8; Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE] =
                 [0; { Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE }];
             let (one, two) = whole.split_at_mut(a.len());
-            one.copy_from_slice(&a);
-            two.copy_from_slice(&b);
+            one.copy_from_slice(a);
+            two.copy_from_slice(b);
             whole
         };
         Self::hash(&out)
@@ -68,9 +68,7 @@ where
             .map(|e| <H>::hash(&e))
             .collect::<Vec<[u8; <H>::DIGEST_OUTPUT_SIZE]>>();
         MerkleTree::pad_elements(&mut elements);
-        Self {
-            elements,
-        }
+        Self { elements }
     }
 
     fn pad_elements<T: Copy + Clone + Default>(elements: &mut Vec<T>) {
@@ -267,8 +265,7 @@ pub mod test {
     #[test]
     fn sixteen() {
         let values = vec!["a", "b", "c", "d", "e", "f", "g", "h", "i"];
-        let new_values: Vec<&[u8]> = values.par_iter().map(|e| e.as_bytes()).collect();
-        let tree = MerkleTree::<Keccak256>::new(&new_values);
+        let tree = MerkleTree::<Keccak256>::new(&values);
         let first = tree.concat_hashes(&tree.elements[0], &tree.elements[1]);
         let second = tree.concat_hashes(&tree.elements[2], &tree.elements[3]);
         let third = tree.concat_hashes(&tree.elements[4], &tree.elements[5]);
