@@ -1,83 +1,79 @@
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
 use rayon::prelude::*;
 use tiny_keccak::{Hasher, Keccak};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MerkleTree<H: HashFunction + Send + Sync, const LENGTH: usize> {
-    elements: Vec<[u8; LENGTH]>,
-    hasher: H,
+pub struct MerkleTree<H: HashFunction + Send + Sync>
+where
+    H:,
+    [(); H::DIGEST_OUTPUT_SIZE]:,
+{
+    elements: Vec<[u8; H::DIGEST_OUTPUT_SIZE]>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Keccak256;
 
 impl HashFunction for Keccak256 {
-    fn hash<const LENGTH: usize>(input: &[u8]) -> [u8; LENGTH] {
+    const DIGEST_OUTPUT_SIZE: usize = 32;
+    fn hash(input: &[u8]) -> [u8; Self::DIGEST_OUTPUT_SIZE] {
         let mut hasher = Keccak::v256();
-        let mut output = [0u8; LENGTH];
+        let mut output = [0u8; Self::DIGEST_OUTPUT_SIZE];
         hasher.update(input);
-        hasher.finalize(&mut output);
-        output
-    }
-
-    fn concat_hashes<const LENGTH: usize>(a: &[u8], b: &[u8]) -> [u8; LENGTH] {
-        let mut hasher = Keccak::v256();
-        let mut output = [0u8; LENGTH];
-        hasher.update(a);
-        hasher.update(b);
         hasher.finalize(&mut output);
         output
     }
 }
 
 pub trait HashFunction {
-    fn hash<const LENGTH: usize>(input: &[u8]) -> [u8; LENGTH];
-    fn concat_hashes<const LENGTH: usize>(a: &[u8], b: &[u8]) -> [u8; LENGTH] {
-        let first: [u8; LENGTH] = Self::hash(a);
-        let second: [u8; LENGTH] = Self::hash(b);
-        let mut out = Vec::new();
-        out.extend_from_slice(&first);
-        out.extend_from_slice(&second);
+    const DIGEST_OUTPUT_SIZE: usize;
+    fn hash(input: &[u8]) -> [u8; Self::DIGEST_OUTPUT_SIZE];
+    fn concat_hashes(a: &[u8], b: &[u8]) -> [u8; Self::DIGEST_OUTPUT_SIZE]
+    where
+        [(); Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE]:,
+    {
+        let out: [u8; Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE] = {
+            let mut whole: [u8; Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE] =
+                [0; { Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE }];
+            let (one, two) = whole.split_at_mut(a.len());
+            one.copy_from_slice(&a);
+            two.copy_from_slice(&b);
+            whole
+        };
         Self::hash(&out)
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum NodeLocation<const LENGTH: usize> {
-    Left([u8; LENGTH]),
-    Right([u8; LENGTH]),
+pub enum NodeLocation<H: HashFunction + Copy + Clone>
+where
+    H: Clone + Copy,
+    [(); H::DIGEST_OUTPUT_SIZE]:,
+{
+    Left([u8; H::DIGEST_OUTPUT_SIZE]),
+    Right([u8; H::DIGEST_OUTPUT_SIZE]),
 }
 
-impl<H: HashFunction + Send + Sync, const LENGTH: usize> MerkleTree<H, LENGTH> {
-    pub fn new<T>(mut elements: Vec<T>, hasher: H) -> MerkleTree<H, { LENGTH }>
-    where
-        T: AsRef<[u8]> + Default + Clone,
-    {
-        MerkleTree::<H, LENGTH>::pad_elements::<T>(&mut elements);
-        let elements = elements
+impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H>
+where
+    H:,
+    [u8; H::DIGEST_OUTPUT_SIZE]: Default,
+{
+    pub fn new(elements: &[impl AsRef<[u8]>]) -> MerkleTree<H> {
+        let mut elements = elements
             .iter()
-            .map(|e| <H>::hash(&<H>::hash::<LENGTH>(e.as_ref())))
-            .collect::<Vec<[u8; LENGTH]>>();
-
-        Self { elements, hasher }
-    }
-
-    pub fn new_from_bytes(
-        mut elements: Vec<&[u8]>,
-        hashing_function: H,
-    ) -> MerkleTree<H, { LENGTH }> {
-        MerkleTree::<H, LENGTH>::pad_elements::<&[u8]>(&mut elements);
-        let elements = elements
-            .par_iter()
-            .map(|e| <H>::hash(&<H>::hash::<LENGTH>(e.as_ref())))
-            .collect::<Vec<[u8; LENGTH]>>();
-
+            .map(|e| <H>::hash(e.as_ref()))
+            .map(|e| <H>::hash(&e))
+            .collect::<Vec<[u8; <H>::DIGEST_OUTPUT_SIZE]>>();
+        MerkleTree::pad_elements(&mut elements);
         Self {
             elements,
-            hasher: hashing_function,
         }
     }
 
-    fn pad_elements<T: Default + Clone>(elements: &mut Vec<T>) {
+    fn pad_elements<T: Copy + Clone + Default>(elements: &mut Vec<T>) {
         let len = elements.len();
         if len.is_power_of_two() {
             return;
@@ -86,11 +82,17 @@ impl<H: HashFunction + Send + Sync, const LENGTH: usize> MerkleTree<H, LENGTH> {
         elements.extend_from_slice(vec![T::default(); pad].as_slice());
     }
 
-    fn concat_hashes(&self, a: &[u8], b: &[u8]) -> [u8; LENGTH] {
+    fn concat_hashes(&self, a: &[u8], b: &[u8]) -> [u8; <H>::DIGEST_OUTPUT_SIZE]
+    where
+        [(); <H>::DIGEST_OUTPUT_SIZE + <H>::DIGEST_OUTPUT_SIZE]:,
+    {
         <H>::concat_hashes(a, b)
     }
 
-    pub fn merkle_root(&self) -> MerkleRoot<LENGTH> {
+    pub fn merkle_root(&self) -> MerkleRoot<H>
+    where
+        [(); <H>::DIGEST_OUTPUT_SIZE + <H>::DIGEST_OUTPUT_SIZE]:,
+    {
         let mut elements = self.elements.clone();
         loop {
             if elements.len() == 1 {
@@ -101,14 +103,17 @@ impl<H: HashFunction + Send + Sync, const LENGTH: usize> MerkleTree<H, LENGTH> {
                 .into_par_iter()
                 .chunks(2)
                 .map(|e| self.concat_hashes(&e[0], &e[1]))
-                .collect::<Vec<HashValue<LENGTH>>>();
+                .collect::<Vec<HashValue<H>>>();
             elements = new_set;
         }
 
         MerkleRoot(elements[0])
     }
 
-    pub fn generate_proof(&self, index: usize) -> (MerkleRoot<LENGTH>, MerkleProof<LENGTH>) {
+    pub fn generate_proof(&self, index: usize) -> (MerkleRoot<H>, MerkleProof<H>)
+    where
+        [(); <H>::DIGEST_OUTPUT_SIZE + <H>::DIGEST_OUTPUT_SIZE]:,
+    {
         let mut elements = self.elements.clone();
         let mut proof = MerkleProof::new();
         let mut idx: usize = index;
@@ -155,39 +160,49 @@ impl<H: HashFunction + Send + Sync, const LENGTH: usize> MerkleTree<H, LENGTH> {
     }
 }
 
-pub type HashValue<const LENGTH: usize> = [u8; LENGTH];
+pub type HashValue<H: HashFunction> = [u8; <H>::DIGEST_OUTPUT_SIZE];
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct MerkleRoot<const LENGTH: usize>([u8; LENGTH]);
+pub struct MerkleRoot<H>([u8; <H>::DIGEST_OUTPUT_SIZE])
+where
+    H: HashFunction,
+    [(); H::DIGEST_OUTPUT_SIZE]:;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MerkleProof<const LENGTH: usize>(Vec<NodeLocation<LENGTH>>);
+pub struct MerkleProof<H: HashFunction + Copy + Clone>(Vec<NodeLocation<H>>)
+where
+    H: Clone + Copy,
+    [(); H::DIGEST_OUTPUT_SIZE]:;
 
-impl<const LENGTH: usize> Default for MerkleProof<LENGTH> {
+impl<H: HashFunction> Default for MerkleProof<H>
+where
+    H: Clone + Copy,
+    [(); H::DIGEST_OUTPUT_SIZE]:,
+{
     fn default() -> Self {
-        Self::new()
+        MerkleProof(Vec::with_capacity(128))
     }
 }
 
-impl<const LENGTH: usize> MerkleProof<LENGTH> {
-    pub fn validate_proof<T: AsRef<[u8]> + ?Sized, H: HashFunction>(
+impl<H: HashFunction + Clone + Copy> MerkleProof<H>
+where
+    H: Clone + Copy,
+    [(); H::DIGEST_OUTPUT_SIZE + H::DIGEST_OUTPUT_SIZE]:,
+{
+    pub fn validate_proof<T: AsRef<[u8]> + ?Sized>(
         &self,
-        root: &MerkleRoot<LENGTH>,
+        root: &MerkleRoot<H>,
         element: &T,
-        _hash_function: H,
     ) -> bool {
         self.0
             .iter()
-            .fold(
-                <H>::hash::<LENGTH>(&<H>::hash::<LENGTH>(element.as_ref())),
-                |mut acc, e| {
-                    acc = match e {
-                        NodeLocation::Left(hash) => <H>::concat_hashes(hash, &acc),
-                        NodeLocation::Right(hash) => <H>::concat_hashes(&acc, hash),
-                    };
-                    acc
-                },
-            )
+            .fold(<H>::hash(&<H>::hash(element.as_ref())), |mut acc, e| {
+                acc = match e {
+                    NodeLocation::Left(hash) => <H>::concat_hashes(hash, &acc),
+                    NodeLocation::Right(hash) => <H>::concat_hashes(&acc, hash),
+                };
+                acc
+            })
             .eq(&root.0)
     }
 
@@ -195,11 +210,11 @@ impl<const LENGTH: usize> MerkleProof<LENGTH> {
         MerkleProof(vec![])
     }
 
-    pub fn push(&mut self, value: NodeLocation<LENGTH>) {
+    pub fn push(&mut self, value: NodeLocation<H>) {
         self.0.push(value)
     }
 
-    pub fn extend_from_slice(&mut self, proof_elements: &[NodeLocation<LENGTH>]) {
+    pub fn extend_from_slice(&mut self, proof_elements: &[NodeLocation<H>]) {
         self.0.extend_from_slice(proof_elements)
     }
 }
@@ -212,18 +227,17 @@ pub mod test {
     #[test]
     fn test_run() {
         let values = vec!["a", "b", "c", "d", "e"];
-        let new_values: Vec<&[u8]> = values.par_iter().map(|e| e.as_bytes()).collect();
-        let tree = MerkleTree::<Keccak256, 32>::new_from_bytes(new_values, Keccak256);
+        let tree = MerkleTree::<Keccak256>::new(&values);
         tree.merkle_root();
         let (root, proof) = tree.generate_proof(2);
-        assert!(proof.validate_proof(&root, "c", Keccak256));
-        assert!(!proof.validate_proof(&root, "a", Keccak256));
+        assert!(proof.validate_proof(&root, "c"));
+        assert!(!proof.validate_proof(&root, "a"));
     }
 
     #[test]
     fn unpadded() {
         let values = vec!["a", "b", "c", "d"];
-        let tree = MerkleTree::<Keccak256, 32>::new(values, Keccak256);
+        let tree = MerkleTree::<Keccak256>::new(&values);
 
         let first = tree.concat_hashes(&tree.elements[0], &tree.elements[1]);
         let second = tree.concat_hashes(&tree.elements[2], &tree.elements[3]);
@@ -231,13 +245,13 @@ pub mod test {
 
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(1);
-        assert!(proof.validate_proof(&root, "b", Keccak256));
+        assert!(proof.validate_proof(&root, "b"));
     }
 
     #[test]
     fn padded() {
         let values = vec!["a", "b", "c", "d", "e"];
-        let tree = MerkleTree::<Keccak256, 32>::new(values, Keccak256);
+        let tree = MerkleTree::<Keccak256>::new(&values);
         let first = tree.concat_hashes(&tree.elements[0], &tree.elements[1]);
         let second = tree.concat_hashes(&tree.elements[2], &tree.elements[3]);
         let third = tree.concat_hashes(&tree.elements[4], &tree.elements[5]);
@@ -247,14 +261,14 @@ pub mod test {
         let root = tree.concat_hashes(&fifth, &sixth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(3);
-        assert!(proof.validate_proof(&root, "d", Keccak256));
+        assert!(proof.validate_proof(&root, "d"));
     }
 
     #[test]
     fn sixteen() {
         let values = vec!["a", "b", "c", "d", "e", "f", "g", "h", "i"];
         let new_values: Vec<&[u8]> = values.par_iter().map(|e| e.as_bytes()).collect();
-        let tree = MerkleTree::<Keccak256, 32>::new(new_values, Keccak256);
+        let tree = MerkleTree::<Keccak256>::new(&new_values);
         let first = tree.concat_hashes(&tree.elements[0], &tree.elements[1]);
         let second = tree.concat_hashes(&tree.elements[2], &tree.elements[3]);
         let third = tree.concat_hashes(&tree.elements[4], &tree.elements[5]);
@@ -274,6 +288,6 @@ pub mod test {
         let root = tree.concat_hashes(&thirteenth, &fourteenth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(6);
-        assert!(proof.validate_proof(&root, "g", Keccak256));
+        assert!(proof.validate_proof(&root, "g"));
     }
 }
