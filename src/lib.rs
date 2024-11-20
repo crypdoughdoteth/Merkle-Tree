@@ -1,5 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
+#![feature(hash_set_entry)]
+use std::collections::HashSet;
 
 use rayon::prelude::*;
 use tiny_keccak::{Hasher, Keccak};
@@ -38,8 +40,9 @@ pub trait HashFunction {
             let mut whole: [u8; Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE] =
                 [0; { Self::DIGEST_OUTPUT_SIZE + Self::DIGEST_OUTPUT_SIZE }];
             let (one, two) = whole.split_at_mut(a.len());
-            one.copy_from_slice(a);
-            two.copy_from_slice(b);
+            let res = [a, b];
+            one.copy_from_slice(res[0]);
+            two.copy_from_slice(res[1]);
             whole
         };
         Self::hash(&out)
@@ -108,6 +111,73 @@ where
         MerkleRoot(elements[0])
     }
 
+    pub fn gmp_2(&self, mut indices: Vec<usize>) -> (MerkleRoot<H>, MerkleMultiProof<H>)
+    where
+        [(); <H>::DIGEST_OUTPUT_SIZE + <H>::DIGEST_OUTPUT_SIZE]:,
+    {
+        let mut proof_elements: Vec<NodeLocation<H>> = Vec::new();
+        let mut elements = self.elements.clone();
+        loop {
+            if elements.len() == 1 {
+                break;
+            }
+
+            let new_set = elements
+                .into_par_iter()
+                .chunks(2)
+                .map(|e| self.concat_hashes(&e[0], &e[1]))
+                .collect::<Vec<HashValue<H>>>();
+            // get proof elements for layer and calculate the next layer's indices
+            // tokio spawn
+            self.mp_get_proof_elements_next_idxs(&mut indices, &mut proof_elements, &new_set);
+            elements = new_set;
+        }
+        (MerkleRoot(elements[0]), MerkleMultiProof(proof_elements))
+    }
+
+    fn mp_get_proof_elements_next_idxs(
+        &self,
+        indices: &mut Vec<usize>,
+        proof_elements: &mut Vec<NodeLocation<H>>,
+        new_set: &[[u8; <H>::DIGEST_OUTPUT_SIZE]],
+    ) {
+        // For each of the indices take the index of its immediate neighbor in layer L,
+        // and store the given element index and the neighboring index as a pair of indices
+        // (an "immediate neighbor" is the leaf index right next to a target leaf index that shares the same parent).
+        //
+        // *** Computes proof elements separately from tree layers ***
+        let b_pruned = indices
+            .iter()
+            .flat_map(|e| if e % 2 == 0 { [*e, e + 1] } else { [e - 1, *e] })
+            // dedup (creates b_pruned)
+            .fold(HashSet::new(), |mut acc, x| {
+                acc.insert(x);
+                acc
+            });
+        // turn indices into HashSet
+        let idxs = indices.iter().fold(HashSet::new(), |mut acc, x| {
+            acc.insert(*x);
+            acc
+        });
+        // Take the difference between the set of indices in Bpruned and A and append the hash values for the given indices,
+        // for the given Merkle layer to the multipoof M
+        let diff = b_pruned.difference(&idxs);
+        let proof_element_idxs = diff.into_iter().map(|e| *e).collect::<Vec<usize>>();
+        let new_layer = b_pruned
+            .iter()
+            .filter_map(|e| if e % 2 == 0 { Some(e / 2) } else { None })
+            .collect::<Vec<usize>>();
+        *indices = new_layer;
+        proof_element_idxs.iter().for_each(|e| {
+            let node = if e % 2 == 0 {
+                NodeLocation::Left(new_set[*e])
+            } else {
+                NodeLocation::Right(new_set[*e])
+            };
+            proof_elements.push(node);
+        });
+    }
+
     pub fn generate_proof(&self, index: usize) -> (MerkleRoot<H>, MerkleProof<H>)
     where
         [(); <H>::DIGEST_OUTPUT_SIZE + <H>::DIGEST_OUTPUT_SIZE]:,
@@ -172,6 +242,12 @@ where
     H: Clone + Copy,
     [(); H::DIGEST_OUTPUT_SIZE]:;
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MerkleMultiProof<H: HashFunction + Copy + Clone>(Vec<NodeLocation<H>>)
+where
+    H: Clone + Copy,
+    [(); H::DIGEST_OUTPUT_SIZE]:;
+
 impl<H: HashFunction> Default for MerkleProof<H>
 where
     H: Clone + Copy,
@@ -182,6 +258,16 @@ where
     }
 }
 
+// impl<H: HashFunction + Clone + Copy> MerkleMultiProof<H>
+// where
+//     H: Clone + Copy,
+//     [(); H::DIGEST_OUTPUT_SIZE + H::DIGEST_OUTPUT_SIZE]:,
+// {
+//     pub fn verify_multiproof<T: AsRef<[u8]>>(&self, root: &MerkleRoot<H>, elements: &[T]) -> bool {
+//         true
+//     }
+//
+// }
 impl<H: HashFunction + Clone + Copy> MerkleProof<H>
 where
     H: Clone + Copy,
