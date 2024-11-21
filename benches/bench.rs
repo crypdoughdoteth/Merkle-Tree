@@ -7,7 +7,7 @@ fn thirtytwo() {
     ];
     let tree = MerkleTree::<Keccak256>::new(&values);
     let (root, proof) = tree.generate_proof(11);
-    proof.validate_proof(&root, "l");
+    proof.validate(&root, "l");
 }
 
 fn mt32(c: &mut Criterion) {

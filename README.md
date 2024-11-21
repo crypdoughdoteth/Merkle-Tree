@@ -6,6 +6,8 @@ the rayon thread pool.
 
 # Single Element Proofs with Keccak256
 ```rust
+use merkle_tree::{Keccak256, MerkleTree};
+
 let values = vec![
     "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q",
 ];
