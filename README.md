@@ -13,7 +13,7 @@ let values = vec![
 ];
 let my_new_tree: MerkleTree<Keccak256> = MerkleTree::new();
 let (root, proof) = tree.generate_proof(11);
-proof.validate_proof(&root, "l");
+proof.validate(&root, "l");
 
 ```
 
