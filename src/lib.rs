@@ -115,13 +115,15 @@ where
     where
         [(); <H>::DIGEST_OUTPUT_SIZE + <H>::DIGEST_OUTPUT_SIZE]:,
     {
-        let mut proof_elements: Vec<NodeLocation<H>> = Vec::new();
+        let mut proof_elements: Vec<(NodeLocation<H>, usize)> = Vec::new();
+        indices.sort();
         let mut elements = self.elements.clone();
         loop {
             if elements.len() == 1 {
                 break;
             }
 
+            self.mp_get_proof_elements_next_idxs(&mut indices, &mut proof_elements, &elements);
             let new_set = elements
                 .into_par_iter()
                 .chunks(2)
@@ -129,7 +131,6 @@ where
                 .collect::<Vec<HashValue<H>>>();
             // get proof elements for layer and calculate the next layer's indices
             // tokio spawn
-            self.mp_get_proof_elements_next_idxs(&mut indices, &mut proof_elements, &new_set);
             elements = new_set;
         }
         (MerkleRoot(elements[0]), MerkleMultiProof(proof_elements))
@@ -138,8 +139,8 @@ where
     fn mp_get_proof_elements_next_idxs(
         &self,
         indices: &mut Vec<usize>,
-        proof_elements: &mut Vec<NodeLocation<H>>,
-        new_set: &[[u8; <H>::DIGEST_OUTPUT_SIZE]],
+        proof_elements: &mut Vec<(NodeLocation<H>, usize)>,
+        elements: &[[u8; <H>::DIGEST_OUTPUT_SIZE]],
     ) {
         // For each of the indices take the index of its immediate neighbor in layer L,
         // and store the given element index and the neighboring index as a pair of indices
@@ -162,19 +163,20 @@ where
         // Take the difference between the set of indices in Bpruned and A and append the hash values for the given indices,
         // for the given Merkle layer to the multipoof M
         let diff = b_pruned.difference(&idxs);
-        let proof_element_idxs = diff.into_iter().map(|e| *e).collect::<Vec<usize>>();
+        let mut proof_element_idxs = diff.into_iter().map(|e| *e).collect::<Vec<usize>>();
+        proof_element_idxs.sort();
         let new_layer = b_pruned
             .iter()
             .filter_map(|e| if e % 2 == 0 { Some(e / 2) } else { None })
             .collect::<Vec<usize>>();
+        println!("New Layer: {:?}", new_layer);
         *indices = new_layer;
         proof_element_idxs.iter().for_each(|e| {
-            let node = if e % 2 == 0 {
-                NodeLocation::Left(new_set[*e])
+            if e % 2 == 0 {
+                proof_elements.push((NodeLocation::Left(elements[*e]), *e))
             } else {
-                NodeLocation::Right(new_set[*e])
-            };
-            proof_elements.push(node);
+                proof_elements.push((NodeLocation::Right(elements[*e]), *e))
+            }
         });
     }
 
@@ -243,7 +245,7 @@ where
     [(); H::DIGEST_OUTPUT_SIZE]:;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MerkleMultiProof<H: HashFunction + Copy + Clone>(Vec<NodeLocation<H>>)
+pub struct MerkleMultiProof<H: HashFunction + Copy + Clone>(Vec<(NodeLocation<H>, usize)>)
 where
     H: Clone + Copy,
     [(); H::DIGEST_OUTPUT_SIZE]:;
@@ -263,10 +265,21 @@ where
 //     H: Clone + Copy,
 //     [(); H::DIGEST_OUTPUT_SIZE + H::DIGEST_OUTPUT_SIZE]:,
 // {
-//     pub fn verify_multiproof<T: AsRef<[u8]>>(&self, root: &MerkleRoot<H>, elements: &[T]) -> bool {
+//     pub fn verify_multiproof<T: AsRef<[u8]>>(
+//         &self,
+//         root: &MerkleRoot<H>,
+//         proof: MerkleMultiProof<H>,
+//     ) -> bool {
+//         let b_pruned = proof.0.iter().flat_map(|e| {
+//             if e.1 % 2 == 0 {
+//                 [e.1, e.1 + 1]
+//             } else {
+//                 [e.1 - 1, e.1]
+//             }
+//         });
+//         // dedup (creates b_pruned)
 //         true
 //     }
-//
 // }
 impl<H: HashFunction + Clone + Copy> MerkleProof<H>
 where
@@ -277,7 +290,7 @@ where
         Self(proof)
     }
 
-    pub fn validate_proof<T: AsRef<[u8]> + ?Sized>(
+    pub fn validate<T: AsRef<[u8]> + ?Sized>(
         &self,
         root: &MerkleRoot<H>,
         element: &T,
@@ -318,8 +331,8 @@ pub mod test {
         let tree = MerkleTree::<Keccak256>::new(&values);
         tree.merkle_root();
         let (root, proof) = tree.generate_proof(2);
-        assert!(proof.validate_proof(&root, "c"));
-        assert!(!proof.validate_proof(&root, "a"));
+        assert!(proof.validate(&root, "c"));
+        assert!(!proof.validate(&root, "a"));
     }
 
     #[test]
@@ -333,7 +346,7 @@ pub mod test {
 
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(1);
-        assert!(proof.validate_proof(&root, "b"));
+        assert!(proof.validate(&root, "b"));
     }
 
     #[test]
@@ -349,7 +362,7 @@ pub mod test {
         let root = tree.concat_hashes(&fifth, &sixth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(3);
-        assert!(proof.validate_proof(&root, "d"));
+        assert!(proof.validate(&root, "d"));
     }
 
     #[test]
@@ -375,6 +388,19 @@ pub mod test {
         let root = tree.concat_hashes(&thirteenth, &fourteenth);
         assert_eq!(MerkleRoot(root), tree.merkle_root());
         let (root, proof) = tree.generate_proof(6);
-        assert!(proof.validate_proof(&root, "g"));
+        assert!(proof.validate(&root, "g"));
+    }
+
+    #[test]
+    fn multiproof_construction() {
+        let values = vec!["a", "b", "c", "d", "e", "f", "g", "h", "i"];
+        let tree: MerkleTree<Keccak256> = MerkleTree::new(&values);
+        let (_, proof) = tree.gmp_2([2, 3, 8, 13].to_vec());
+        assert_eq!(proof.0[0].1, 9);
+        assert_eq!(proof.0[1].1, 12);
+        assert_eq!(proof.0[2].1, 0);
+        assert_eq!(proof.0[3].1, 5);
+        assert_eq!(proof.0[4].1, 7);
+        assert_eq!(proof.0[5].1, 1);
     }
 }
