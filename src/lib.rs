@@ -3,13 +3,12 @@
 #![feature(lazy_type_alias)]
 
 use rayon::prelude::*;
-use std::{collections::HashSet, fmt::Debug, marker::PhantomData};
+use std::{collections::HashSet, fmt::Debug};
 use tiny_keccak::{Hasher, Keccak};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MerkleTree<H: HashFunction + Send + Sync> {
     elements: Vec<H::Array>,
-    _phantom: PhantomData<H>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, PartialOrd, Ord)]
@@ -20,9 +19,7 @@ impl HashFunction for Keccak256 {
     fn hash(inputs: &[&[u8]]) -> Self::Array {
         let mut hasher = Keccak::v256();
         let mut output = Self::Array::default();
-        for i in inputs {
-            hasher.update(i)
-        }
+        inputs.iter().for_each(|i| hasher.update(i));
         hasher.finalize(&mut output);
         output
     }
@@ -59,10 +56,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
             .map(|e| <H>::hash(&[e.as_ref()]))
             .collect::<Vec<HashValue<H>>>();
         MerkleTree::<H>::pad_elements(&mut elements);
-        Self {
-            elements,
-            _phantom: PhantomData,
-        }
+        Self { elements }
     }
 
     fn pad_elements<T: Copy + Clone + Default>(elements: &mut Vec<T>) {
@@ -74,42 +68,33 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
         elements.extend_from_slice(vec![T::default(); pad].as_slice());
     }
 
-    fn concat_hashes(&self, a: &[u8], b: &[u8]) -> H::Array {
+    pub fn concat_hashes(&self, a: &[u8], b: &[u8]) -> H::Array {
         <H>::concat_hashes(a, b)
     }
 
-    pub fn merkle_root(&self) -> MerkleRoot<H> {
-        let mut elements = self.elements.clone();
-        loop {
-            if elements.len() == 1 {
-                break;
-            }
-
+    pub fn merkle_root(self) -> MerkleRoot<H> {
+        let mut elements = self.elements;
+        while elements.len() > 1 {
             let new_set = elements
                 .into_par_iter()
                 .chunks(2)
-                .map(|e| self.concat_hashes(&e[0].as_ref(), &e[1].as_ref()))
+                .map(|e| <H>::concat_hashes(&e[0].as_ref(), &e[1].as_ref()))
                 .collect::<Vec<H::Array>>();
             elements = new_set;
         }
-
         MerkleRoot(elements[0])
     }
 
-    pub fn gmp_2(&self, mut indices: Vec<usize>) -> (MerkleRoot<H>, MerkleMultiProof<H>) {
+    pub fn gmp_2(self, mut indices: Vec<usize>) -> (MerkleRoot<H>, MerkleMultiProof<H>) {
         let mut proof_elements: Vec<(NodeLocation<H>, usize)> = Vec::new();
         indices.sort();
-        let mut elements = self.elements.clone();
-        loop {
-            if elements.len() == 1 {
-                break;
-            }
-
-            self.mp_get_proof_elements_next_idxs(&mut indices, &mut proof_elements, &elements);
+        let mut elements = self.elements;
+        while elements.len() > 1 {
+            Self::mp_get_proof_elements_next_idxs(&mut indices, &mut proof_elements, &elements);
             let new_set = elements
                 .into_par_iter()
                 .chunks(2)
-                .map(|e| self.concat_hashes(&e[0].as_ref(), &e[1].as_ref()))
+                .map(|e| H::concat_hashes(&e[0].as_ref(), &e[1].as_ref()))
                 .collect::<Vec<HashValue<H>>>();
             // get proof elements for layer and calculate the next layer's indices
             // tokio spawn
@@ -119,7 +104,6 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
     }
 
     fn mp_get_proof_elements_next_idxs(
-        &self,
         indices: &mut Vec<usize>,
         proof_elements: &mut Vec<(NodeLocation<H>, usize)>,
         elements: &[H::Array],
@@ -151,7 +135,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
             .iter()
             .filter_map(|e| if e % 2 == 0 { Some(e / 2) } else { None })
             .collect::<Vec<usize>>();
-        println!("New Layer: {:?}", new_layer);
+        println!("New Layer: {new_layer:?}");
         *indices = new_layer;
         proof_element_idxs.iter().for_each(|e| {
             if e % 2 == 0 {
@@ -162,8 +146,8 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
         });
     }
 
-    pub fn generate_proof(&self, index: usize) -> (MerkleRoot<H>, MerkleProof<H>) {
-        let mut elements = self.elements.clone();
+    pub fn generate_proof(self, index: usize) -> (MerkleRoot<H>, MerkleProof<H>) {
+        let mut elements = self.elements;
         let mut proof = MerkleProof::new();
         let mut idx: usize = index;
         loop {
@@ -188,7 +172,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
                             acc.2 = i;
                         }
                         acc.1
-                            .push(self.concat_hashes(&e[0].as_ref(), &e[1].as_ref()));
+                            .push(H::concat_hashes(e[0].as_ref(), e[1].as_ref()));
                         acc
                     },
                 )
@@ -209,7 +193,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
         (MerkleRoot(elements[0]), proof)
     }
 }
- 
+
 pub type HashValue<H: HashFunction> = <H as HashFunction>::Array;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -253,18 +237,14 @@ impl<H: HashFunction + Clone + Copy> MerkleProof<H> {
         Self(proof)
     }
 
-    pub fn validate<T: AsRef<[u8]> + ?Sized>(
-        &self,
-        root: &MerkleRoot<H>,
-        element: &T,
-    ) -> bool {
+    pub fn validate<T: AsRef<[u8]> + ?Sized>(&self, root: &MerkleRoot<H>, element: &T) -> bool {
         let element = <H>::hash(&[<H>::hash(&[element.as_ref()]).as_ref()]);
         self.0
             .iter()
             .fold(element, |mut acc, e| {
                 acc = match e {
-                    NodeLocation::Left(hash) => <H>::concat_hashes(hash.as_ref(), &acc.as_ref()),
-                    NodeLocation::Right(hash) => <H>::concat_hashes(&acc.as_ref(), hash.as_ref()),
+                    NodeLocation::Left(hash) => <H>::concat_hashes(hash.as_ref(), acc.as_ref()),
+                    NodeLocation::Right(hash) => <H>::concat_hashes(acc.as_ref(), hash.as_ref()),
                 };
                 acc
             })
@@ -292,7 +272,6 @@ pub mod test {
     fn test_run() {
         let values = vec!["a", "b", "c", "d", "e"];
         let tree = MerkleTree::<Keccak256>::new(&values);
-        tree.merkle_root();
         let (root, proof) = tree.generate_proof(2);
         assert!(proof.validate(&root, "c"));
         assert!(!proof.validate(&root, "a"));
@@ -307,7 +286,7 @@ pub mod test {
         let second = tree.concat_hashes(&tree.elements[2], &tree.elements[3]);
         let root = tree.concat_hashes(&first, &second);
 
-        assert_eq!(MerkleRoot(root), tree.merkle_root());
+        assert_eq!(MerkleRoot(root), tree.clone().merkle_root());
         let (root, proof) = tree.generate_proof(1);
         assert!(proof.validate(&root, "b"));
     }
@@ -323,7 +302,7 @@ pub mod test {
         let fifth = tree.concat_hashes(&first, &second);
         let sixth = tree.concat_hashes(&third, &fourth);
         let root = tree.concat_hashes(&fifth, &sixth);
-        assert_eq!(MerkleRoot(root), tree.merkle_root());
+        assert_eq!(MerkleRoot(root), tree.clone().merkle_root());
         let (root, proof) = tree.generate_proof(3);
         assert!(proof.validate(&root, "d"));
     }
@@ -349,7 +328,7 @@ pub mod test {
         let thirteenth = tree.concat_hashes(&nineth, &tenth);
         let fourteenth = tree.concat_hashes(&eleventh, &twelfth);
         let root = tree.concat_hashes(&thirteenth, &fourteenth);
-        assert_eq!(MerkleRoot(root), tree.merkle_root());
+        assert_eq!(MerkleRoot(root), tree.clone().merkle_root());
         let (root, proof) = tree.generate_proof(6);
         assert!(proof.validate(&root, "g"));
     }
