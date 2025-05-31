@@ -1,8 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(hash_set_entry)]
-use std::collections::HashSet;
-
+use std::{collections::HashSet, marker::PhantomData};
 use rayon::prelude::*;
 use tiny_keccak::{Hasher, Keccak};
 
@@ -10,9 +9,10 @@ use tiny_keccak::{Hasher, Keccak};
 pub struct MerkleTree<H: HashFunction + Send + Sync>
 where
     H:,
-    [(); H::DIGEST_OUTPUT_SIZE]:,
+    [u8; H::DIGEST_OUTPUT_SIZE]:,
 {
     elements: Vec<[u8; H::DIGEST_OUTPUT_SIZE]>,
+    _phantom: PhantomData<H>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, PartialOrd, Ord)]
@@ -71,7 +71,7 @@ where
             .map(|e| <H>::hash(&e))
             .collect::<Vec<[u8; <H>::DIGEST_OUTPUT_SIZE]>>();
         MerkleTree::pad_elements(&mut elements);
-        Self { elements }
+        Self { elements, _phantom: PhantomData }
     }
 
     fn pad_elements<T: Copy + Clone + Default>(elements: &mut Vec<T>) {
