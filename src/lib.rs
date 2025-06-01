@@ -1,7 +1,3 @@
-#![allow(incomplete_features)]
-#![feature(hash_set_entry)]
-#![feature(lazy_type_alias)]
-
 use rayon::prelude::*;
 use std::{collections::HashSet, fmt::Debug};
 use tiny_keccak::{Hasher, Keccak};
@@ -27,6 +23,7 @@ impl HashFunction for Keccak256 {
 
 pub trait HashFunction {
     type Array: Clone
+        + IntoIterator
         + Eq
         + Default
         + Copy
@@ -36,6 +33,7 @@ pub trait HashFunction {
         + Send
         + Sync
         + Debug;
+
     fn hash(input: &[&[u8]]) -> Self::Array;
     fn concat_hashes(a: &[u8], b: &[u8]) -> Self::Array {
         Self::hash(&[a, b])
@@ -54,7 +52,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
             .iter()
             .map(|e| <H>::hash(&[e.as_ref()]))
             .map(|e| <H>::hash(&[e.as_ref()]))
-            .collect::<Vec<HashValue<H>>>();
+            .collect::<Vec<H::Array>>();
         MerkleTree::<H>::pad_elements(&mut elements);
         Self { elements }
     }
@@ -95,7 +93,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
                 .into_par_iter()
                 .chunks(2)
                 .map(|e| H::concat_hashes(&e[0].as_ref(), &e[1].as_ref()))
-                .collect::<Vec<HashValue<H>>>();
+                .collect::<Vec<H::Array>>();
             // get proof elements for layer and calculate the next layer's indices
             // tokio spawn
             elements = new_set;
@@ -171,8 +169,7 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
                             }
                             acc.2 = i;
                         }
-                        acc.1
-                            .push(H::concat_hashes(e[0].as_ref(), e[1].as_ref()));
+                        acc.1.push(H::concat_hashes(e[0].as_ref(), e[1].as_ref()));
                         acc
                     },
                 )
@@ -193,8 +190,6 @@ impl<H: HashFunction + Send + Sync + Copy> MerkleTree<H> {
         (MerkleRoot(elements[0]), proof)
     }
 }
-
-pub type HashValue<H: HashFunction> = <H as HashFunction>::Array;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct MerkleRoot<H: HashFunction>(H::Array);
